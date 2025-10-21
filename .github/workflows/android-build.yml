@@ -1,0 +1,68 @@
+name: Build Android APK (anis SMC bot)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_SDK_ROOT: ${{ runner.tool_cache }}/android-sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: |
+          npm ci
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: |
+          npm run build
+
+      - name: Install Capacitor CLI
+        run: npm install -g @capacitor/cli || true
+
+      - name: Install Android SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip openjdk-17-jdk wget
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          cd $ANDROID_SDK_ROOT/cmdline-tools
+          wget https://dl.google.com/android/repository/commandlinetools-linux-10125497_latest.zip -O cmdline.zip
+          unzip cmdline.zip
+          rm cmdline.zip
+          export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/bin
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+
+      - name: Sync Capacitor Android project
+        run: |
+          cd frontend
+          npx cap sync android
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+
+      - name: Build APK
+        run: |
+          cd frontend/android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: anis-smc-bot-apk
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
